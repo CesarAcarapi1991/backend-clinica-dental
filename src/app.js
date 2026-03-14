@@ -67,6 +67,7 @@ const authRoutes = require('./routes/authRoutes');
 const usuarioRoutes = require('./routes/usuarioRoutes');
 const tratamientoRoutes = require('./routes/tratamientoRoutes');
 const pacienteRoutes = require('./routes/pacienteRoutes');
+const citaRoutes = require('./routes/citaRoutes');
 const authenticateToken = require('./middlewares/auth');
 const forcePasswordChange = require('./middlewares/forcePasswordChange');
 
@@ -99,6 +100,7 @@ app.use('/api', forcePasswordChange);
 app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/tratamientos', tratamientoRoutes);
 app.use('/api/pacientes', pacienteRoutes);
+app.use('/api/citas', citaRoutes);
 
 // Manejo de errores 404 - CORREGIDO
 app.use((req, res) => {
