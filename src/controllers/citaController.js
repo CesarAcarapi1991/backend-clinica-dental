@@ -298,6 +298,211 @@ const citaController = {
             console.error('Error al bloquear agenda:', error);
             res.status(500).json({ error: 'Error interno del servidor' });
         }
+    },
+
+        // src/controllers/citaController.js - Agregar estos métodos
+
+    // Listar citas con filtros (para admin y odontólogo)
+    async listarCitas(req, res) {
+    try {
+        const {
+        fecha_desde,
+        fecha_hasta,
+        estado,
+        odontologo_id,
+        paciente_id,
+        pagina = 1,
+        limite = 50
+        } = req.query;
+
+        const usuario = req.user;
+        const offset = (pagina - 1) * limite;
+
+        // Configurar filtros según el rol
+        const filtros = {
+        fecha_desde: fecha_desde || new Date().toISOString().split('T')[0], // Hoy por defecto
+        fecha_hasta: fecha_hasta,
+        estado: estado ? estado.split(',') : null,
+        limit: parseInt(limite),
+        offset: parseInt(offset)
+        };
+
+        // Lógica de permisos
+        if (usuario.tipo_usuario === 'admin') {
+        // Admin puede ver todo, puede filtrar por odontólogo
+        if (odontologo_id) {
+            filtros.odontologo_id = odontologo_id;
+        }
+        } else if (usuario.tipo_usuario === 'odontologo') {
+        // Odontólogo solo ve sus propias citas
+        const odontologo = await UsuarioStaff.findByUsuarioId(usuario.id);
+        if (!odontologo) {
+            return res.status(403).json({ error: 'Perfil de odontólogo no encontrado' });
+        }
+        filtros.odontologo_id = odontologo.id;
+        } else if (usuario.tipo_usuario === 'asistente') {
+        // Asistente puede ver todas las citas pero no filtrar por odontólogo específico
+        // a menos que se le dé permiso explícito
+        if (odontologo_id && req.user.tipo_usuario === 'asistente') {
+            // Verificar si el asistente tiene permiso para ese odontólogo
+            // Por ahora, permitimos si viene explícitamente
+            filtros.odontologo_id = odontologo_id;
+        }
+        } else {
+        return res.status(403).json({ error: 'No autorizado para ver citas' });
+        }
+
+        if (paciente_id) {
+        filtros.paciente_id = paciente_id;
+        }
+
+        // Obtener citas y total
+        const [citas, total] = await Promise.all([
+        Cita.findAllWithFilters(filtros),
+        Cita.countWithFilters(filtros)
+        ]);
+
+        // Agrupar por estado para facilitar visualización
+        const citasPorEstado = {
+        programadas: citas.filter(c => c.estado === 'programada'),
+        confirmadas: citas.filter(c => c.estado === 'confirmada'),
+        en_curso: citas.filter(c => c.estado === 'en_curso'),
+        completadas: citas.filter(c => c.estado === 'completada'),
+        canceladas: citas.filter(c => c.estado === 'cancelada'),
+        no_asistio: citas.filter(c => c.estado === 'no_asistio')
+        };
+
+        res.json({
+        success: true,
+        data: {
+            citas,
+            citas_por_estado: citasPorEstado,
+            paginacion: {
+            pagina: parseInt(pagina),
+            limite: parseInt(limite),
+            total,
+            total_paginas: Math.ceil(total / limite)
+            },
+            filtros_aplicados: filtros
+        }
+        });
+
+    } catch (error) {
+        console.error('Error al listar citas:', error);
+        res.status(500).json({ 
+        success: false,
+        error: 'Error interno del servidor' 
+        });
+    }
+    },
+
+    // Obtener estadísticas de citas
+    async estadisticasCitas(req, res) {
+    try {
+        const {
+        fecha_desde,
+        fecha_hasta,
+        odontologo_id
+        } = req.query;
+
+        const usuario = req.user;
+
+        // Configurar filtros según el rol
+        const filtros = {
+        fecha_desde: fecha_desde,
+        fecha_hasta: fecha_hasta
+        };
+
+        if (usuario.tipo_usuario === 'admin') {
+        if (odontologo_id) {
+            filtros.odontologo_id = odontologo_id;
+        }
+        } else if (usuario.tipo_usuario === 'odontologo') {
+        const odontologo = await UsuarioStaff.findByUsuarioId(usuario.id);
+        if (!odontologo) {
+            return res.status(403).json({ error: 'Perfil de odontólogo no encontrado' });
+        }
+        filtros.odontologo_id = odontologo.id;
+        }
+
+        const estadisticas = await Cita.getEstadisticas(filtros);
+
+        // Calcular porcentajes
+        const total = parseInt(estadisticas.total_citas) || 0;
+        const estadisticasConPorcentajes = {
+        ...estadisticas,
+        porcentaje_programadas: total ? ((estadisticas.programadas / total) * 100).toFixed(2) : 0,
+        porcentaje_confirmadas: total ? ((estadisticas.confirmadas / total) * 100).toFixed(2) : 0,
+        porcentaje_completadas: total ? ((estadisticas.completadas / total) * 100).toFixed(2) : 0,
+        porcentaje_canceladas: total ? ((estadisticas.canceladas / total) * 100).toFixed(2) : 0
+        };
+
+        res.json({
+        success: true,
+        data: estadisticasConPorcentajes
+        });
+
+    } catch (error) {
+        console.error('Error al obtener estadísticas:', error);
+        res.status(500).json({ 
+        success: false,
+        error: 'Error interno del servidor' 
+        });
+    }
+    },
+
+    // Obtener citas del día (resumen rápido)
+    async citasDelDia(req, res) {
+    try {
+        const usuario = req.user;
+        const hoy = new Date().toISOString().split('T')[0];
+
+        let odontologo_id = null;
+        
+        if (usuario.tipo_usuario === 'odontologo') {
+        const odontologo = await UsuarioStaff.findByUsuarioId(usuario.id);
+        if (odontologo) {
+            odontologo_id = odontologo.id;
+        }
+        }
+
+        const filtros = {
+        fecha_desde: hoy,
+        fecha_hasta: hoy,
+        odontologo_id
+        };
+
+        const citas = await Cita.findAllWithFilters(filtros);
+
+        // Organizar por hora
+        const citasPorHora = {};
+        citas.forEach(cita => {
+        const hora = cita.hora_inicio.substring(0, 5); // HH:MM
+        if (!citasPorHora[hora]) {
+            citasPorHora[hora] = [];
+        }
+        citasPorHora[hora].push(cita);
+        });
+
+        res.json({
+        success: true,
+        data: {
+            fecha: hoy,
+            total_citas: citas.length,
+            citas_por_hora: citasPorHora,
+            proximas_citas: citas.filter(c => 
+            c.estado === 'programada' || c.estado === 'confirmada'
+            )
+        }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener citas del día:', error);
+        res.status(500).json({ 
+        success: false,
+        error: 'Error interno del servidor' 
+        });
+    }
     }
 };
 
@@ -309,5 +514,7 @@ function calcularHoraFin(horaInicio, minutosDuracion) {
     const nuevosMinutos = (totalMinutos % 60).toString().padStart(2, '0');
     return `${nuevasHoras}:${nuevosMinutos}`;
 }
+
+
 
 module.exports = citaController;

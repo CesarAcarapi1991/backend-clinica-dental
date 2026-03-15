@@ -40,6 +40,11 @@ router.post('/bloquear', esOdontologo, citaController.bloquearAgenda);
 // Consultar disponibilidad
 router.get('/disponibilidad', esAsistente, citaController.horariosDisponibles);
 
+// 📋 NUEVAS RUTAS PARA LISTADO DE CITAS
+router.get('/listar', esAsistente, citaController.listarCitas);
+router.get('/estadisticas', esAsistente, citaController.estadisticasCitas);
+router.get('/dia', esAsistente, citaController.citasDelDia);
+
 // Gestión de citas
 router.post('/', esAsistente, citaController.crearCita);
 router.get('/paciente/:paciente_id', esAsistente, citaController.citasPaciente);

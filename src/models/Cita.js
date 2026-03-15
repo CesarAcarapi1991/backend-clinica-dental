@@ -258,6 +258,188 @@ class Cita {
         const mins = (minutos % 60).toString().padStart(2, '0');
         return `${hours}:${mins}`;
     }
+
+    // src/models/Cita.js - Agregar este método
+
+    static async findAllWithFilters(filtros) {
+    const { 
+        fecha_desde, 
+        fecha_hasta, 
+        estado, 
+        odontologo_id,
+        paciente_id,
+        limit = 100, 
+        offset = 0 
+    } = filtros;
+
+    let query = `
+        SELECT 
+        c.*,
+        p.nombres as paciente_nombres,
+        p.apellidos as paciente_apellidos,
+        p.telefono as paciente_telefono,
+        o.nombres as odontologo_nombres,
+        o.apellidos as odontologo_apellidos,
+        o.especialidad as odontologo_especialidad,
+        t.nombre as tratamiento_nombre,
+        t.codigo as tratamiento_codigo
+        FROM citas c
+        JOIN pacientes p ON c.paciente_id = p.id
+        JOIN usuarios_staff o ON c.odontologo_id = o.id
+        LEFT JOIN tratamientos t ON c.tratamiento_id = t.id
+        WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    // Filtro por rango de fechas
+    if (fecha_desde) {
+        query += ` AND c.fecha_cita >= $${paramIndex}`;
+        params.push(fecha_desde);
+        paramIndex++;
+    }
+
+    if (fecha_hasta) {
+        query += ` AND c.fecha_cita <= $${paramIndex}`;
+        params.push(fecha_hasta);
+        paramIndex++;
+    }
+
+    // Filtro por estado
+    if (estado) {
+        if (Array.isArray(estado)) {
+        query += ` AND c.estado = ANY($${paramIndex}::text[])`;
+        params.push(estado);
+        } else {
+        query += ` AND c.estado = $${paramIndex}`;
+        params.push(estado);
+        }
+        paramIndex++;
+    }
+
+    // Filtro por odontólogo
+    if (odontologo_id) {
+        query += ` AND c.odontologo_id = $${paramIndex}`;
+        params.push(odontologo_id);
+        paramIndex++;
+    }
+
+    // Filtro por paciente
+    if (paciente_id) {
+        query += ` AND c.paciente_id = $${paramIndex}`;
+        params.push(paciente_id);
+        paramIndex++;
+    }
+
+    // Ordenar por fecha y hora
+    query += ` ORDER BY c.fecha_cita ASC, c.hora_inicio ASC`;
+
+    // Paginación
+    query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(limit, offset);
+
+    const result = await db.query(query, params);
+    return result.rows;
+    }
+
+    static async countWithFilters(filtros) {
+    const { 
+        fecha_desde, 
+        fecha_hasta, 
+        estado, 
+        odontologo_id,
+        paciente_id 
+    } = filtros;
+
+    let query = `
+        SELECT COUNT(*) as total
+        FROM citas c
+        WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (fecha_desde) {
+        query += ` AND c.fecha_cita >= $${paramIndex}`;
+        params.push(fecha_desde);
+        paramIndex++;
+    }
+
+    if (fecha_hasta) {
+        query += ` AND c.fecha_cita <= $${paramIndex}`;
+        params.push(fecha_hasta);
+        paramIndex++;
+    }
+
+    if (estado) {
+        if (Array.isArray(estado)) {
+        query += ` AND c.estado = ANY($${paramIndex}::text[])`;
+        params.push(estado);
+        } else {
+        query += ` AND c.estado = $${paramIndex}`;
+        params.push(estado);
+        }
+        paramIndex++;
+    }
+
+    if (odontologo_id) {
+        query += ` AND c.odontologo_id = $${paramIndex}`;
+        params.push(odontologo_id);
+        paramIndex++;
+    }
+
+    if (paciente_id) {
+        query += ` AND c.paciente_id = $${paramIndex}`;
+        params.push(paciente_id);
+        paramIndex++;
+    }
+
+    const result = await db.query(query, params);
+    return parseInt(result.rows[0].total);
+    }
+
+    static async getEstadisticas(filtros) {
+    const { fecha_desde, fecha_hasta, odontologo_id } = filtros;
+
+    let query = `
+        SELECT 
+        COUNT(*) as total_citas,
+        COUNT(CASE WHEN estado = 'programada' THEN 1 END) as programadas,
+        COUNT(CASE WHEN estado = 'confirmada' THEN 1 END) as confirmadas,
+        COUNT(CASE WHEN estado = 'en_curso' THEN 1 END) as en_curso,
+        COUNT(CASE WHEN estado = 'completada' THEN 1 END) as completadas,
+        COUNT(CASE WHEN estado = 'cancelada' THEN 1 END) as canceladas,
+        COUNT(CASE WHEN estado = 'no_asistio' THEN 1 END) as no_asistieron
+        FROM citas c
+        WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (fecha_desde) {
+        query += ` AND c.fecha_cita >= $${paramIndex}`;
+        params.push(fecha_desde);
+        paramIndex++;
+    }
+
+    if (fecha_hasta) {
+        query += ` AND c.fecha_cita <= $${paramIndex}`;
+        params.push(fecha_hasta);
+        paramIndex++;
+    }
+
+    if (odontologo_id) {
+        query += ` AND c.odontologo_id = $${paramIndex}`;
+        params.push(odontologo_id);
+        paramIndex++;
+    }
+
+    const result = await db.query(query, params);
+    return result.rows[0];
+    }
 }
 
 module.exports = Cita;  
